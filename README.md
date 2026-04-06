@@ -605,13 +605,6 @@ Interpretation:
 - at `1m` and `10m`, GPU compute is dramatically faster, but CSV load/save dominates the full program enough that total runtime remains close or slightly worse for GPU
 - the current backend shows that GPU processing is faster, while full-program performance is still largely an IO problem
 
-This should improve only after:
-
-- larger benchmark sizes
-- reduced host-to-device overhead
-- better kernel/runtime tuning
-- broader backend implementation beyond the single map-scale path
-
 ## Error Model
 
 Melt currently reports errors in several broad categories.
@@ -738,23 +731,6 @@ It is not enough by itself for:
 - native executable builds
 - native GPU execution
 
-## Next Work
-
-High-value next steps for Melt:
-
-- publish GitHub release binaries for `meltc`
-- package or embed the support runtime so native builds are less repo-dependent
-- make `default.metallib` runtime resolution fully self-contained
-- extend the language beyond the current scale/map slice
-- add comments as a stable documented language feature
-- document a proper grammar/spec in a dedicated `LANGUAGE.md`
-- add more benchmark programs beyond unary scale
-- benchmark with multi-million-row datasets
-- optimize the GPU runtime to reduce setup and transfer overhead
-- expand native backend support for more PRD operations
-- add automated unit and end-to-end test coverage
-- provide release/build instructions for non-developer users
-
 ## Can Users Use Only The `meltc` Binary?
 
 Not by itself in the current form.
@@ -791,4 +767,4 @@ bin/        Built compiler binaries
 
 ## License
 
-License not yet specified.
+MIT
