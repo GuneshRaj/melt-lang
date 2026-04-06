@@ -1,0 +1,12 @@
+struct PriceRow:
+    ts: Int64
+    close: Float64
+
+kernel fn scale(x: Array[Float64], factor: Float64) -> Array[Float64]:
+    return x.map(v -> v * factor)
+
+fn main():
+    rows = csv.load("data/prices_100k.csv", as=Array[PriceRow])
+    close = rows.map(r -> r.close)
+    out = scale(close, 1.1)
+    csv.save("build/out_gpu_scale_100k.csv", out)

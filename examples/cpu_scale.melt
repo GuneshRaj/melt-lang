@@ -1,0 +1,10 @@
+struct PriceRow:
+    ts: Int64
+    close: Float64
+
+fn main():
+    rows = csv.load("data/prices_100k.csv", as=Array[PriceRow])
+    close = rows.map(r -> r.close)
+    out = close.map(v -> v * 1.1)
+    print(out)
+    csv.save("build/out_cpu_scale.csv", out)
