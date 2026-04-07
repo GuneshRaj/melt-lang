@@ -1,0 +1,4 @@
+fn main():
+    close = parquet.col("data/prices_10k.parquet", "close", as=Float32)
+    movers = close.filter(v -> v > 105.0)
+    print(movers.count())

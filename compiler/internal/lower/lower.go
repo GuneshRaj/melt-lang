@@ -104,26 +104,36 @@ func (l *Lowerer) lowerExprTo(expr ast.Expr, dest string) ([]mir.Instr, error) {
 	switch e := expr.(type) {
 	case *ast.CallExpr:
 		if field, ok := e.Callee.(*ast.FieldExpr); ok {
-			if ns, ok := field.Base.(*ast.NameExpr); ok && ns.Name == "csv" {
-				switch field.Name {
-				case "col":
-					path, _ := e.Args[0].Value.(*ast.StringExpr)
-					column, _ := e.Args[1].Value.(*ast.StringExpr)
-					return []mir.Instr{{Op: "csv_load_column", Dest: dest, Type: l.info.ExprTypes[expr].String(), Text: path.Value, Field: column.Value}}, nil
-				case "load":
-					path, _ := e.Args[0].Value.(*ast.StringExpr)
-					ty := l.info.ExprTypes[expr]
-					if ty.Kind == types.Array && ty.Elem != nil && ty.Elem.Kind == types.Struct {
-						return []mir.Instr{{Op: "csv_load_struct_array", Dest: dest, Type: ty.String(), Text: path.Value, Field: ty.Elem.Name}}, nil
+			if ns, ok := field.Base.(*ast.NameExpr); ok {
+				if ns.Name == "csv" {
+					switch field.Name {
+					case "col":
+						path, _ := e.Args[0].Value.(*ast.StringExpr)
+						column, _ := e.Args[1].Value.(*ast.StringExpr)
+						return []mir.Instr{{Op: "csv_load_column", Dest: dest, Type: l.info.ExprTypes[expr].String(), Text: path.Value, Field: column.Value}}, nil
+					case "load":
+						path, _ := e.Args[0].Value.(*ast.StringExpr)
+						ty := l.info.ExprTypes[expr]
+						if ty.Kind == types.Array && ty.Elem != nil && ty.Elem.Kind == types.Struct {
+							return []mir.Instr{{Op: "csv_load_struct_array", Dest: dest, Type: ty.String(), Text: path.Value, Field: ty.Elem.Name}}, nil
+						}
+						return []mir.Instr{{Op: "csv_load_float64_array", Dest: dest, Type: ty.String(), Text: path.Value}}, nil
+					case "save":
+						path, _ := e.Args[0].Value.(*ast.StringExpr)
+						arg, err := l.referenceOf(e.Args[1].Value)
+						if err != nil {
+							return nil, err
+						}
+						return []mir.Instr{{Op: "csv_save", Args: []string{arg}, Text: path.Value, Type: l.info.ExprTypes[e.Args[1].Value].String()}}, nil
 					}
-					return []mir.Instr{{Op: "csv_load_float64_array", Dest: dest, Type: ty.String(), Text: path.Value}}, nil
-				case "save":
-					path, _ := e.Args[0].Value.(*ast.StringExpr)
-					arg, err := l.referenceOf(e.Args[1].Value)
-					if err != nil {
-						return nil, err
+				}
+				if ns.Name == "parquet" {
+					switch field.Name {
+					case "col":
+						path, _ := e.Args[0].Value.(*ast.StringExpr)
+						column, _ := e.Args[1].Value.(*ast.StringExpr)
+						return []mir.Instr{{Op: "parquet_load_column", Dest: dest, Type: l.info.ExprTypes[expr].String(), Text: path.Value, Field: column.Value}}, nil
 					}
-					return []mir.Instr{{Op: "csv_save", Args: []string{arg}, Text: path.Value, Type: l.info.ExprTypes[e.Args[1].Value].String()}}, nil
 				}
 			}
 			if field.Name == "map" {

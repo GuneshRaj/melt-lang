@@ -3,7 +3,7 @@ import Foundation
 @main
 struct MeltProgram {
     static func main() throws {
-        let close = try MeltCSV.loadFloat32Column("data/prices_10k.csv", column: "close")
+        let close = try MeltParquet.loadFloat32Column("data/prices_10k.parquet", column: "close")
         let movers = close.filter { $0 > Float(105) }
         let count = Int64(movers.count)
         let total = movers.reduce(Float(0), +)

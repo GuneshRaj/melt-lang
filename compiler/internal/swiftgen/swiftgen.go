@@ -197,6 +197,15 @@ func swiftForInstr(inst mir.Instr, benchmark bool) (string, error) {
 		default:
 			return "", fmt.Errorf("unsupported csv column type %s", inst.Type)
 		}
+	case "parquet_load_column":
+		switch inst.Type {
+		case "Array[Float32]":
+			return fmt.Sprintf("let %s = try MeltParquet.loadFloat32Column(%q, column: %q)", inst.Dest, inst.Text, inst.Field), nil
+		case "Array[Int32]":
+			return fmt.Sprintf("let %s = try MeltParquet.loadInt32Column(%q, column: %q)", inst.Dest, inst.Text, inst.Field), nil
+		default:
+			return "", fmt.Errorf("unsupported parquet column type %s", inst.Type)
+		}
 	case "csv_load_struct_array":
 		return fmt.Sprintf("let %s = try MeltCSV.loadRows(%q, as: %s.self)", inst.Dest, inst.Text, inst.Field), nil
 	case "csv_load_float64_array":

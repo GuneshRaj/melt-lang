@@ -3,6 +3,7 @@ import Foundation
 public enum MeltSupportError: Error {
     case fileNotFound(String)
     case csvDecodeError(String)
+    case parquetDecodeError(String)
     case jsonDecodeError(String)
     case metalUnavailable
     case kernelFailure(String)

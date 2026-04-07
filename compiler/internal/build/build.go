@@ -56,6 +56,7 @@ func Build(module *mir.Module, outPath string, root string, sourcePath string) e
 		filepath.Join(root, "support", "Sources", "MeltSupport", "FileIO.swift"),
 		filepath.Join(root, "support", "Sources", "MeltSupport", "JSON.swift"),
 		filepath.Join(root, "support", "Sources", "MeltSupport", "MetalSupport.swift"),
+		filepath.Join(root, "support", "Sources", "MeltSupport", "Parquet.swift"),
 		filepath.Join(root, "support", "Sources", "MeltSupport", "RuntimeTypes.swift"),
 		"-o", outPath,
 	); err != nil {

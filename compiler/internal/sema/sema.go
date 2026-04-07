@@ -105,8 +105,9 @@ func (a *Analyzer) collectTopDecls() {
 func (a *Analyzer) checkFunctions() {
 	for _, fn := range a.info.Funcs {
 		scope := map[string]types.Type{
-			"csv":   {Kind: types.Namespace, Name: "csv"},
-			"print": types.NewFunction([]types.Type{}, types.Type{Kind: types.Void}),
+			"csv":     {Kind: types.Namespace, Name: "csv"},
+			"parquet": {Kind: types.Namespace, Name: "parquet"},
+			"print":   types.NewFunction([]types.Type{}, types.Type{Kind: types.Void}),
 		}
 		for i, p := range fn.Decl.Params {
 			scope[p.Name] = fn.Params[i]
@@ -317,8 +318,13 @@ func (a *Analyzer) checkExpr(expr ast.Expr, scope map[string]types.Type, fn Func
 
 func (a *Analyzer) checkCallExpr(call *ast.CallExpr, scope map[string]types.Type, fn FuncInfo) types.Type {
 	if field, ok := call.Callee.(*ast.FieldExpr); ok {
-		if ns, ok := field.Base.(*ast.NameExpr); ok && ns.Name == "csv" {
-			return a.checkCSVCall(field.Name, call, scope, fn)
+		if ns, ok := field.Base.(*ast.NameExpr); ok {
+			if ns.Name == "csv" {
+				return a.checkCSVCall(field.Name, call, scope, fn)
+			}
+			if ns.Name == "parquet" {
+				return a.checkParquetCall(field.Name, call, scope, fn)
+			}
 		}
 		methodTargetTy := a.checkExpr(field.Base, scope, fn)
 		switch field.Name {
@@ -432,6 +438,41 @@ func (a *Analyzer) checkCSVCall(name string, call *ast.CallExpr, scope map[strin
 		return types.Type{Kind: types.Void}
 	default:
 		a.errorSpan(call.Span, diag.ResolveErrorKind, "unknown csv API csv."+name)
+		return types.Type{Kind: types.Invalid}
+	}
+}
+
+func (a *Analyzer) checkParquetCall(name string, call *ast.CallExpr, scope map[string]types.Type, fn FuncInfo) types.Type {
+	if fn.IsKernel {
+		a.errorSpan(call.Span, diag.DomainErrorKind, "parquet APIs are not allowed in kernels")
+	}
+	switch name {
+	case "col":
+		if len(call.Args) != 3 || call.Args[2].Name != "as" {
+			a.errorSpan(call.Span, diag.TypeErrorKind, "parquet.col expects (path, column, as=Type)")
+			return types.Type{Kind: types.Invalid}
+		}
+		pathTy := a.checkExpr(call.Args[0].Value, scope, fn)
+		colTy := a.checkExpr(call.Args[1].Value, scope, fn)
+		if pathTy.Kind != types.String {
+			a.errorSpan(call.Args[0].Span, diag.TypeErrorKind, "parquet.col path must be String")
+		}
+		if colTy.Kind != types.String {
+			a.errorSpan(call.Args[1].Span, diag.TypeErrorKind, "parquet.col column must be String")
+		}
+		asExpr, ok := call.Args[2].Value.(*ast.TypeExprValue)
+		if !ok {
+			a.errorSpan(call.Args[2].Span, diag.TypeErrorKind, "parquet.col as= must be a type")
+			return types.Type{Kind: types.Invalid}
+		}
+		elemTy := a.resolveTypeExpr(asExpr.Value)
+		if !types.IsGPUScalar(elemTy) {
+			a.errorSpan(call.Args[2].Span, diag.TypeErrorKind, "parquet.col supports only Float32 and Int32 in v1")
+			return types.Type{Kind: types.Invalid}
+		}
+		return types.NewArray(elemTy)
+	default:
+		a.errorSpan(call.Span, diag.ResolveErrorKind, "unknown parquet API parquet."+name)
 		return types.Type{Kind: types.Invalid}
 	}
 }

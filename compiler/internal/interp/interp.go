@@ -59,6 +59,8 @@ func (i *Interpreter) runFunction(name string, args map[string]Value) (Value, er
 				return Value{}, err
 			}
 			env[inst.Dest] = Value{Kind: inst.Type, Numbers: arr}
+		case "parquet_load_column":
+			return Value{}, fmt.Errorf("parquet is not supported in the Go interpreter yet")
 		case "csv_load_float64_array":
 			arr, err := loadFloat64Array(inst.Text)
 			if err != nil {
