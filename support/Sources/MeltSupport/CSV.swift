@@ -54,6 +54,14 @@ public final class MeltCSV {
         return try loadFloat64Array(path).map(Float.init)
     }
 
+    public static func loadFloat32Column(_ path: String, column: String) throws -> [Float] {
+        return try loadNumericColumn(path, column: column).map(Float.init)
+    }
+
+    public static func loadInt32Column(_ path: String, column: String) throws -> [Int32] {
+        return try loadNumericColumn(path, column: column).map(Int32.init)
+    }
+
     public static func saveFloat64Array(_ path: String, _ values: [Double]) throws {
         let text = values.map { String($0) }.joined(separator: "\n")
         try text.write(toFile: path, atomically: true, encoding: String.Encoding.utf8)
@@ -72,5 +80,22 @@ public final class MeltCSV {
     public static func saveInt32Array(_ path: String, _ values: [Int32]) throws {
         let text = values.map { String($0) }.joined(separator: "\n")
         try text.write(toFile: path, atomically: true, encoding: String.Encoding.utf8)
+    }
+
+    private static func loadNumericColumn(_ path: String, column: String) throws -> [Double] {
+        let text = try MeltFile.readText(path)
+        let rows = text.split(whereSeparator: \.isNewline)
+        guard let headerRow = rows.first else { return [] }
+        let headers = headerRow.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard let columnIndex = headers.firstIndex(of: column) else {
+            throw MeltSupportError.csvDecodeError("missing column \(column) in \(path)")
+        }
+        return try rows.dropFirst().map { row in
+            let cols = row.split(separator: ",", omittingEmptySubsequences: false)
+            guard columnIndex < cols.count, let value = Double(cols[columnIndex]) else {
+                throw MeltSupportError.csvDecodeError("invalid numeric value in column \(column) for \(path)")
+            }
+            return value
+        }
     }
 }

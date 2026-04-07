@@ -1,0 +1,15 @@
+fn main():
+    close = csv.col("data/prices_10k.csv", "close", as=Float32)
+    movers = close.filter(v -> v > 105.0)
+
+    count = movers.count()
+    total = movers.sum()
+    avg = movers.mean()
+    low = movers.min()
+    high = movers.max()
+
+    print(count)
+    print(total)
+    print(avg)
+    print(low)
+    print(high)

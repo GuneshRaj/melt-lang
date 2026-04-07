@@ -272,8 +272,10 @@ Currently used expression forms include:
 - function calls
 - field access
 - array map
+- array filter
+- numeric reductions
 - arithmetic with numeric operands
-- lambda expressions used by `map`
+- lambda expressions used by `map` and `filter`
 
 Examples:
 
@@ -285,6 +287,9 @@ true
 r.close
 scale(close, 1.1)
 x.map(v -> v * factor)
+close.filter(v -> v > 105.0)
+close.sum()
+close.mean()
 ```
 
 ### Numeric Literals And Types
@@ -375,10 +380,11 @@ Host code can currently do:
 
 - call `print`
 - call `csv.load`
+- call `csv.col`
 - call `csv.save`
 - define and call host helper functions
 - call `kernel fn`
-- manipulate arrays in the supported map-oriented subset
+- manipulate arrays in the supported map/filter/reduce subset on GPU-friendly numeric types
 
 Example:
 
@@ -439,6 +445,22 @@ Expected usage:
 - the `as=` argument must be a type
 - the current examples use typed row structs
 
+#### `csv.col`
+
+Loads a single numeric CSV column directly into a GPU-friendly array type.
+
+Current supported style:
+
+```melt
+close = csv.col("data/prices_10k.csv", "close", as=Float32)
+```
+
+Current v1 constraints:
+
+- only `Float32` and `Int32`
+- the named `as=` argument must be present
+- the column name must match the CSV header exactly
+
 #### `csv.save`
 
 Saves a numeric array to CSV-like newline output.
@@ -455,7 +477,7 @@ Current practical support is focused on numeric arrays produced by the implement
 
 #### `map`
 
-The implemented array operation is `map`.
+The implemented array transform operation is `map`.
 
 Example:
 
@@ -470,6 +492,48 @@ close = rows.map(r -> r.close)
 ```
 
 This is the core operation behind both the CPU and GPU scale examples.
+
+#### `filter`
+
+`filter` keeps only the elements whose lambda predicate returns `true`.
+
+Example:
+
+```melt
+movers = close.filter(v -> v > 105.0)
+```
+
+Current v1 constraints:
+
+- only `Array[Float32]` and `Array[Int32]`
+- the lambda must have exactly one parameter
+- the lambda must be a direct comparison against a constant or named value
+
+#### Aggregations
+
+The implemented analytical reductions are:
+
+- `sum()`
+- `count()`
+- `mean()`
+- `min()`
+- `max()`
+
+Example:
+
+```melt
+count = movers.count()
+total = movers.sum()
+avg = movers.mean()
+low = movers.min()
+high = movers.max()
+```
+
+Current v1 constraints:
+
+- only `Array[Float32]` and `Array[Int32]`
+- `count()` returns `Int64`
+- `mean()` returns `Float32` for `Array[Float32]` and `Float32` for `Array[Int32]`
 
 ### CPU And GPU Example Pair
 
@@ -523,10 +587,18 @@ The current reliable language slice is:
 - `return`
 - field projection
 - `csv.load(..., as=Array[T])`
+- `csv.col(path, column, as=Float32|Int32)`
 - `csv.save(...)`
 - `print(...)`
 - array `map`
+- array `filter`
+- `sum`, `count`, `mean`, `min`, `max` on `Array[Float32]` and `Array[Int32]`
 - the scale pattern used by the examples and benchmarks
+
+Current note:
+
+- the analytics API now exists in the compiler, MIR, interpreter, and native Swift path
+- keeping intermediate analytical buffers resident on the GPU across chained operators is the next execution-engine step
 
 ### What Is Not Yet A Full Stable Language Feature
 
@@ -543,6 +615,7 @@ Example source files:
 
 - [examples/cpu_scale_f32.melt](/Users/gunesh/projects/melt-lang/examples/cpu_scale_f32.melt)
 - [examples/gpu_scale_f32.melt](/Users/gunesh/projects/melt-lang/examples/gpu_scale_f32.melt)
+- [examples/analytics_stats_f32.melt](/Users/gunesh/projects/melt-lang/examples/analytics_stats_f32.melt)
 
 CPU example:
 
@@ -579,6 +652,42 @@ fn main():
     print(out)
     csv.save("build/out_gpu_scale_f32.csv", out)
 ```
+
+Analytics example:
+
+```melt
+fn main():
+    close = csv.col("data/prices_10k.csv", "close", as=Float32)
+    movers = close.filter(v -> v > 105.0)
+
+    count = movers.count()
+    total = movers.sum()
+    avg = movers.mean()
+    low = movers.min()
+    high = movers.max()
+
+    print(count)
+    print(total)
+    print(avg)
+    print(low)
+    print(high)
+```
+
+Verified commands:
+
+```bash
+./bin/meltc run examples/analytics_stats_f32.melt
+./bin/meltc build examples/analytics_stats_f32.melt -o build/analytics_stats_f32
+./build/analytics_stats_f32
+```
+
+Expected shape of results on `data/prices_10k.csv`:
+
+- `count`: `4990`
+- `sum`: about `536425`
+- `mean`: about `107.5`
+- `min`: `105.01`
+- `max`: `109.99`
 
 Generate the sample dataset:
 

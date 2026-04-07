@@ -181,10 +181,22 @@ func swiftForInstr(inst mir.Instr, benchmark bool) (string, error) {
 		if inst.Type == "Float32" {
 			return fmt.Sprintf("let %s = Float(%v)", inst.Dest, inst.Float), nil
 		}
+		if inst.Type == "Int32" {
+			return fmt.Sprintf("let %s = Int32(%d)", inst.Dest, int32(inst.Float)), nil
+		}
 		if inst.Type == "Int64" {
 			return fmt.Sprintf("let %s = Int64(%d)", inst.Dest, int64(inst.Float)), nil
 		}
 		return fmt.Sprintf("let %s = %v", inst.Dest, inst.Float), nil
+	case "csv_load_column":
+		switch inst.Type {
+		case "Array[Float32]":
+			return fmt.Sprintf("let %s = try MeltCSV.loadFloat32Column(%q, column: %q)", inst.Dest, inst.Text, inst.Field), nil
+		case "Array[Int32]":
+			return fmt.Sprintf("let %s = try MeltCSV.loadInt32Column(%q, column: %q)", inst.Dest, inst.Text, inst.Field), nil
+		default:
+			return "", fmt.Errorf("unsupported csv column type %s", inst.Type)
+		}
 	case "csv_load_struct_array":
 		return fmt.Sprintf("let %s = try MeltCSV.loadRows(%q, as: %s.self)", inst.Dest, inst.Text, inst.Field), nil
 	case "csv_load_float64_array":
@@ -201,6 +213,27 @@ func swiftForInstr(inst mir.Instr, benchmark bool) (string, error) {
 			return fmt.Sprintf("let %s = %s.map { $0 * Float(%s) }", inst.Dest, inst.Args[0], inst.Args[1]), nil
 		}
 		return fmt.Sprintf("let %s = %s.map { $0 * %s }", inst.Dest, inst.Args[0], inst.Args[1]), nil
+	case "filter_compare_const":
+		return fmt.Sprintf("let %s = %s.filter { $0 %s %s }", inst.Dest, inst.Args[0], inst.Text, swiftScalarLiteral(inst.Float, inst.Type)), nil
+	case "filter_compare_var":
+		return fmt.Sprintf("let %s = %s.filter { $0 %s %s }", inst.Dest, inst.Args[0], inst.Text, inst.Args[1]), nil
+	case "array_sum":
+		return fmt.Sprintf("let %s = %s.reduce(%s, +)", inst.Dest, inst.Args[0], swiftZeroValue(inst.Type)), nil
+	case "array_count":
+		return fmt.Sprintf("let %s = Int64(%s.count)", inst.Dest, inst.Args[0]), nil
+	case "array_mean":
+		switch inst.Type {
+		case "Float32":
+			return fmt.Sprintf("let %s = %s.isEmpty ? Float(0) : %s.reduce(Float(0), +) / Float(%s.count)", inst.Dest, inst.Args[0], inst.Args[0], inst.Args[0]), nil
+		case "Float64":
+			return fmt.Sprintf("let %s = %s.isEmpty ? 0.0 : %s.reduce(0.0, +) / Double(%s.count)", inst.Dest, inst.Args[0], inst.Args[0], inst.Args[0]), nil
+		default:
+			return "", fmt.Errorf("unsupported mean result type %s", inst.Type)
+		}
+	case "array_min":
+		return fmt.Sprintf("let %s = %s.min() ?? %s", inst.Dest, inst.Args[0], swiftZeroValue(inst.Type)), nil
+	case "array_max":
+		return fmt.Sprintf("let %s = %s.max() ?? %s", inst.Dest, inst.Args[0], swiftZeroValue(inst.Type)), nil
 	case "kernel_call":
 		if inst.Type == "Array[Float32]" {
 			if benchmark {
@@ -216,6 +249,9 @@ func swiftForInstr(inst mir.Instr, benchmark bool) (string, error) {
 	case "csv_save":
 		if inst.Type == "Array[Float32]" {
 			return fmt.Sprintf("try MeltCSV.saveFloat32Array(%q, %s)", inst.Text, inst.Args[0]), nil
+		}
+		if inst.Type == "Array[Int32]" {
+			return fmt.Sprintf("try MeltCSV.saveInt32Array(%q, %s)", inst.Text, inst.Args[0]), nil
 		}
 		return fmt.Sprintf("try MeltCSV.saveFloat64Array(%q, %s)", inst.Text, inst.Args[0]), nil
 	case "return":
@@ -244,8 +280,12 @@ func swiftType(t string) string {
 		return "Double"
 	case "String":
 		return "String"
+	case "Int32":
+		return "Int32"
 	case "Array[Float32]":
 		return "[Float]"
+	case "Array[Int32]":
+		return "[Int32]"
 	case "Array[Float64]":
 		return "[Double]"
 	default:
@@ -278,4 +318,30 @@ func functionUsesKernel(fn mir.Function) bool {
 		}
 	}
 	return false
+}
+
+func swiftZeroValue(t string) string {
+	switch t {
+	case "Float32":
+		return "Float(0)"
+	case "Float64":
+		return "0.0"
+	case "Int32":
+		return "Int32(0)"
+	case "Int64":
+		return "Int64(0)"
+	default:
+		return "0"
+	}
+}
+
+func swiftScalarLiteral(v float64, t string) string {
+	switch t {
+	case "Array[Float32]":
+		return fmt.Sprintf("Float(%v)", v)
+	case "Array[Int32]":
+		return fmt.Sprintf("Int32(%d)", int32(v))
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }

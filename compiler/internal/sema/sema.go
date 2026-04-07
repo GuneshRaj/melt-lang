@@ -321,8 +321,13 @@ func (a *Analyzer) checkCallExpr(call *ast.CallExpr, scope map[string]types.Type
 			return a.checkCSVCall(field.Name, call, scope, fn)
 		}
 		methodTargetTy := a.checkExpr(field.Base, scope, fn)
-		if field.Name == "map" {
+		switch field.Name {
+		case "map":
 			return a.checkMapCall(call, methodTargetTy, scope, fn)
+		case "filter":
+			return a.checkFilterCall(call, methodTargetTy, scope, fn)
+		case "sum", "count", "mean", "min", "max":
+			return a.checkAggregateCall(field.Name, call, methodTargetTy, scope, fn)
 		}
 	}
 
@@ -372,6 +377,30 @@ func (a *Analyzer) checkCSVCall(name string, call *ast.CallExpr, scope map[strin
 		a.errorSpan(call.Span, diag.DomainErrorKind, "csv APIs are not allowed in kernels")
 	}
 	switch name {
+	case "col":
+		if len(call.Args) != 3 || call.Args[2].Name != "as" {
+			a.errorSpan(call.Span, diag.TypeErrorKind, "csv.col expects (path, column, as=Type)")
+			return types.Type{Kind: types.Invalid}
+		}
+		pathTy := a.checkExpr(call.Args[0].Value, scope, fn)
+		colTy := a.checkExpr(call.Args[1].Value, scope, fn)
+		if pathTy.Kind != types.String {
+			a.errorSpan(call.Args[0].Span, diag.TypeErrorKind, "csv.col path must be String")
+		}
+		if colTy.Kind != types.String {
+			a.errorSpan(call.Args[1].Span, diag.TypeErrorKind, "csv.col column must be String")
+		}
+		asExpr, ok := call.Args[2].Value.(*ast.TypeExprValue)
+		if !ok {
+			a.errorSpan(call.Args[2].Span, diag.TypeErrorKind, "csv.col as= must be a type")
+			return types.Type{Kind: types.Invalid}
+		}
+		elemTy := a.resolveTypeExpr(asExpr.Value)
+		if !types.IsGPUScalar(elemTy) {
+			a.errorSpan(call.Args[2].Span, diag.TypeErrorKind, "csv.col supports only Float32 and Int32 in v1")
+			return types.Type{Kind: types.Invalid}
+		}
+		return types.NewArray(elemTy)
 	case "load":
 		if len(call.Args) != 2 || call.Args[1].Name != "as" {
 			a.errorSpan(call.Span, diag.TypeErrorKind, "csv.load expects (path, as=Type)")
@@ -429,6 +458,63 @@ func (a *Analyzer) checkMapCall(call *ast.CallExpr, targetTy types.Type, scope m
 	lambdaScope[lambda.Params[0]] = *targetTy.Elem
 	bodyTy := a.checkExpr(lambda.Body, lambdaScope, fn)
 	return types.NewArray(bodyTy)
+}
+
+func (a *Analyzer) checkFilterCall(call *ast.CallExpr, targetTy types.Type, scope map[string]types.Type, fn FuncInfo) types.Type {
+	if targetTy.Kind != types.Array || targetTy.Elem == nil {
+		a.errorSpan(call.Span, diag.TypeErrorKind, "filter target must be Array")
+		return types.Type{Kind: types.Invalid}
+	}
+	if !types.IsGPUScalar(*targetTy.Elem) {
+		a.errorSpan(call.Span, diag.TypeErrorKind, "filter supports only Array[Float32] and Array[Int32] in v1")
+		return types.Type{Kind: types.Invalid}
+	}
+	if len(call.Args) != 1 {
+		a.errorSpan(call.Span, diag.TypeErrorKind, "filter expects one lambda argument")
+		return types.Type{Kind: types.Invalid}
+	}
+	lambda, ok := call.Args[0].Value.(*ast.LambdaExpr)
+	if !ok {
+		a.errorSpan(call.Args[0].Span, diag.TypeErrorKind, "filter expects a lambda")
+		return types.Type{Kind: types.Invalid}
+	}
+	if len(lambda.Params) != 1 {
+		a.errorSpan(lambda.Span, diag.TypeErrorKind, "v1 filter lambdas must have exactly one parameter")
+		return types.Type{Kind: types.Invalid}
+	}
+	lambdaScope := cloneScope(scope)
+	lambdaScope[lambda.Params[0]] = *targetTy.Elem
+	bodyTy := a.checkExpr(lambda.Body, lambdaScope, fn)
+	if bodyTy.Kind != types.Bool {
+		a.errorSpan(lambda.Body.GetSpan(), diag.TypeErrorKind, "filter lambda must return Bool")
+	}
+	return targetTy
+}
+
+func (a *Analyzer) checkAggregateCall(name string, call *ast.CallExpr, targetTy types.Type, scope map[string]types.Type, fn FuncInfo) types.Type {
+	if targetTy.Kind != types.Array || targetTy.Elem == nil {
+		a.errorSpan(call.Span, diag.TypeErrorKind, name+" target must be Array")
+		return types.Type{Kind: types.Invalid}
+	}
+	if !types.IsGPUScalar(*targetTy.Elem) {
+		a.errorSpan(call.Span, diag.TypeErrorKind, name+" supports only Array[Float32] and Array[Int32] in v1")
+		return types.Type{Kind: types.Invalid}
+	}
+	if len(call.Args) != 0 {
+		a.errorSpan(call.Span, diag.TypeErrorKind, name+" does not accept arguments")
+		return types.Type{Kind: types.Invalid}
+	}
+	switch name {
+	case "count":
+		return types.Type{Kind: types.Int64}
+	case "mean":
+		if targetTy.Elem.Kind == types.Int32 {
+			return types.Type{Kind: types.Float32}
+		}
+		return *targetTy.Elem
+	default:
+		return *targetTy.Elem
+	}
 }
 
 func (a *Analyzer) resolveTypeExpr(expr ast.TypeExpr) types.Type {

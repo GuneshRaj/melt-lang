@@ -106,6 +106,10 @@ func (l *Lowerer) lowerExprTo(expr ast.Expr, dest string) ([]mir.Instr, error) {
 		if field, ok := e.Callee.(*ast.FieldExpr); ok {
 			if ns, ok := field.Base.(*ast.NameExpr); ok && ns.Name == "csv" {
 				switch field.Name {
+				case "col":
+					path, _ := e.Args[0].Value.(*ast.StringExpr)
+					column, _ := e.Args[1].Value.(*ast.StringExpr)
+					return []mir.Instr{{Op: "csv_load_column", Dest: dest, Type: l.info.ExprTypes[expr].String(), Text: path.Value, Field: column.Value}}, nil
 				case "load":
 					path, _ := e.Args[0].Value.(*ast.StringExpr)
 					ty := l.info.ExprTypes[expr]
@@ -143,6 +147,61 @@ func (l *Lowerer) lowerExprTo(expr ast.Expr, dest string) ([]mir.Instr, error) {
 						}
 					}
 				}
+			}
+			if field.Name == "filter" {
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				lambda := e.Args[0].Value.(*ast.LambdaExpr)
+				op, operandKind, operandValue, operandFloat, err := l.lowerPredicate(lambda)
+				if err != nil {
+					return nil, err
+				}
+				inst := mir.Instr{Dest: dest, Args: []string{base}, Text: op, Type: l.info.ExprTypes[expr].String()}
+				switch operandKind {
+				case "const":
+					inst.Op = "filter_compare_const"
+					inst.Float = operandFloat
+				case "var":
+					inst.Op = "filter_compare_var"
+					inst.Args = append(inst.Args, operandValue)
+				default:
+					return nil, fmt.Errorf("unsupported filter operand kind %s", operandKind)
+				}
+				return []mir.Instr{inst}, nil
+			}
+			switch field.Name {
+			case "sum":
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				return []mir.Instr{{Op: "array_sum", Dest: dest, Args: []string{base}, Type: l.info.ExprTypes[expr].String()}}, nil
+			case "count":
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				return []mir.Instr{{Op: "array_count", Dest: dest, Args: []string{base}, Type: l.info.ExprTypes[expr].String()}}, nil
+			case "mean":
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				return []mir.Instr{{Op: "array_mean", Dest: dest, Args: []string{base}, Type: l.info.ExprTypes[expr].String()}}, nil
+			case "min":
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				return []mir.Instr{{Op: "array_min", Dest: dest, Args: []string{base}, Type: l.info.ExprTypes[expr].String()}}, nil
+			case "max":
+				base, err := l.referenceOf(field.Base)
+				if err != nil {
+					return nil, err
+				}
+				return []mir.Instr{{Op: "array_max", Dest: dest, Args: []string{base}, Type: l.info.ExprTypes[expr].String()}}, nil
 			}
 		}
 		if name, ok := e.Callee.(*ast.NameExpr); ok {
@@ -190,6 +249,10 @@ func (l *Lowerer) lowerExprTo(expr ast.Expr, dest string) ([]mir.Instr, error) {
 				return instrs, nil
 			}
 		}
+		if field, ok := e.Callee.(*ast.FieldExpr); ok {
+			return nil, fmt.Errorf("unsupported call expression .%s", field.Name)
+		}
+		return nil, fmt.Errorf("unsupported call expression with callee %T", e.Callee)
 	case *ast.NameExpr:
 		return []mir.Instr{{Op: "move", Dest: dest, Args: []string{e.Name}, Type: l.info.ExprTypes[expr].String()}}, nil
 	case *ast.FloatExpr:
@@ -236,6 +299,61 @@ func (l *Lowerer) referenceOrTemp(expr ast.Expr, expected types.Type) (string, [
 func (l *Lowerer) nextTemp() string {
 	l.tempSeed++
 	return fmt.Sprintf("__tmp%d", l.tempSeed)
+}
+
+func (l *Lowerer) lowerPredicate(lambda *ast.LambdaExpr) (string, string, string, float64, error) {
+	body, ok := lambda.Body.(*ast.BinaryExpr)
+	if !ok {
+		return "", "", "", 0, fmt.Errorf("unsupported filter lambda body %T", lambda.Body)
+	}
+	if !isCompareOp(body.Op) {
+		return "", "", "", 0, fmt.Errorf("unsupported filter operator %s", body.Op)
+	}
+	if name, ok := body.Left.(*ast.NameExpr); ok && name.Name == lambda.Params[0] {
+		switch rhs := body.Right.(type) {
+		case *ast.FloatExpr:
+			return body.Op, "const", "", rhs.Value, nil
+		case *ast.IntExpr:
+			return body.Op, "const", "", float64(rhs.Value), nil
+		case *ast.NameExpr:
+			return body.Op, "var", rhs.Name, 0, nil
+		}
+	}
+	if name, ok := body.Right.(*ast.NameExpr); ok && name.Name == lambda.Params[0] {
+		switch lhs := body.Left.(type) {
+		case *ast.FloatExpr:
+			return flipCompareOp(body.Op), "const", "", lhs.Value, nil
+		case *ast.IntExpr:
+			return flipCompareOp(body.Op), "const", "", float64(lhs.Value), nil
+		case *ast.NameExpr:
+			return flipCompareOp(body.Op), "var", lhs.Name, 0, nil
+		}
+	}
+	return "", "", "", 0, fmt.Errorf("filter lambda must compare its parameter to a constant or variable")
+}
+
+func isCompareOp(op string) bool {
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		return true
+	default:
+		return false
+	}
+}
+
+func flipCompareOp(op string) string {
+	switch op {
+	case "<":
+		return ">"
+	case "<=":
+		return ">="
+	case ">":
+		return "<"
+	case ">=":
+		return "<="
+	default:
+		return op
+	}
 }
 
 func typeExprString(expr ast.TypeExpr) string {

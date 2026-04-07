@@ -114,6 +114,10 @@ func IsInteger(t Type) bool {
 	return t.Kind == Int32 || t.Kind == Int64
 }
 
+func IsGPUScalar(t Type) bool {
+	return t.Kind == Int32 || t.Kind == Float32
+}
+
 func CanAssign(dst Type, src Type) bool {
 	if dst.Equal(src) {
 		return true
