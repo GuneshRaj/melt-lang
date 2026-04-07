@@ -461,6 +461,30 @@ Current v1 constraints:
 - the named `as=` argument must be present
 - the column name must match the CSV header exactly
 
+#### `parquet.col`
+
+Declares a numeric Parquet column load in the Melt language.
+
+Current supported style:
+
+```melt
+close = parquet.col("data/prices_10k.parquet", "close", as=Float32)
+```
+
+Current v1 constraints:
+
+- only `Float32` and `Int32`
+- the named `as=` argument must be present
+- the column name must match the Parquet column exactly
+
+Current execution status:
+
+- `meltc check` supports it
+- `meltc mir` supports it
+- `meltc build` supports it
+- `meltc run` does not execute it yet
+- the Swift runtime surface exists, but real Parquet file decoding is not implemented yet
+
 #### `csv.save`
 
 Saves a numeric array to CSV-like newline output.
@@ -588,6 +612,7 @@ The current reliable language slice is:
 - field projection
 - `csv.load(..., as=Array[T])`
 - `csv.col(path, column, as=Float32|Int32)`
+- `parquet.col(path, column, as=Float32|Int32)` at the language/compiler level
 - `csv.save(...)`
 - `print(...)`
 - array `map`
@@ -598,6 +623,7 @@ The current reliable language slice is:
 Current note:
 
 - the analytics API now exists in the compiler, MIR, interpreter, and native Swift path
+- Parquet is now part of the language surface and lowers correctly, but runtime Parquet decoding is still pending
 - keeping intermediate analytical buffers resident on the GPU across chained operators is the next execution-engine step
 
 ### What Is Not Yet A Full Stable Language Feature
@@ -607,6 +633,7 @@ These are either partial, in progress, or not the main supported path yet:
 - a broad standard library
 - general-purpose kernel programming beyond the current scale/map path
 - complete native backend coverage for the broader PRD surface
+- real Parquet decoding in the Swift runtime
 - a fully standalone `meltc` binary that carries all runtime/build support with it
 
 ## Examples
@@ -616,6 +643,7 @@ Example source files:
 - [examples/cpu_scale_f32.melt](/Users/gunesh/projects/melt-lang/examples/cpu_scale_f32.melt)
 - [examples/gpu_scale_f32.melt](/Users/gunesh/projects/melt-lang/examples/gpu_scale_f32.melt)
 - [examples/analytics_stats_f32.melt](/Users/gunesh/projects/melt-lang/examples/analytics_stats_f32.melt)
+- [examples/parquet_stats_f32.melt](/Users/gunesh/projects/melt-lang/examples/parquet_stats_f32.melt)
 
 CPU example:
 
@@ -688,6 +716,39 @@ Expected shape of results on `data/prices_10k.csv`:
 - `mean`: about `107.5`
 - `min`: `105.01`
 - `max`: `109.99`
+
+Parquet analytics example:
+
+```melt
+fn main():
+    close = parquet.col("data/prices_10k.parquet", "close", as=Float32)
+    movers = close.filter(v -> v > 105.0)
+
+    count = movers.count()
+    total = movers.sum()
+    avg = movers.mean()
+    low = movers.min()
+    high = movers.max()
+
+    print(count)
+    print(total)
+    print(avg)
+    print(low)
+    print(high)
+```
+
+Verified Parquet compiler results:
+
+```bash
+./bin/meltc check examples/parquet_stats_f32.melt
+./bin/meltc mir examples/parquet_stats_f32.melt
+./bin/meltc build examples/parquet_stats_f32.melt -o build/parquet_stats_f32
+```
+
+Current Parquet runtime status:
+
+- `./bin/meltc run examples/parquet_stats_f32.melt` fails because the Go interpreter does not execute Parquet yet
+- `./build/parquet_stats_f32` currently fails at runtime with `parquetDecodeError(...)` because the Swift runtime stub exists but real Parquet decoding is not implemented yet
 
 Generate the sample dataset:
 
