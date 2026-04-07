@@ -1,2 +1,11 @@
 melt_lang_prd_v5_implementation_pack.md
 data
+build/.gocache
+tests/.DS_Store
+compiler/internal/.DS_Store
+compiler/.DS_Store
+build/.gocache/.DS_Store
+build/.DS_Store
+tests/.DS_Store
+.gitignore
+.DS_Store

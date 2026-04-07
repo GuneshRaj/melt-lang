@@ -1,0 +1,15 @@
+struct PriceRow:
+    ts: Int64
+    /* close column */
+    close: Float32
+
+// host scale
+fn scale(x: Array[Float32], factor: Float32) -> Array[Float32]:
+    return x.map(v -> v * factor) // inline comment
+
+fn main():
+    // load data
+    rows = csv.load("data/prices_10k.csv", as=Array[PriceRow])
+    close = rows.map(r -> r.close)
+    out = scale(close, 1.1)
+    csv.save("build/out_comment_check.csv", out)

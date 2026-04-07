@@ -69,6 +69,12 @@ func (l *Lexer) lexAll() ([]token.Token, []diag.Diagnostic) {
 		case r == '\t':
 			diags = append(diags, l.error("tabs are not allowed for indentation"))
 			l.advance()
+		case l.startsWith("//"):
+			l.skipLineComment()
+		case l.startsWith("/*"):
+			if err := l.skipBlockComment(); err.Message != "" {
+				diags = append(diags, err)
+			}
 		case r == '\n':
 			toks = append(toks, l.emit(token.NEWLINE, "\n"))
 			l.advance()
@@ -105,12 +111,23 @@ func (l *Lexer) lexIndentation() (*token.Token, diag.Diagnostic) {
 	spaces := 0
 	startCol := l.column
 	for !l.atEOF() {
-		switch l.peek() {
-		case ' ':
+		switch {
+		case l.peek() == ' ':
 			spaces++
 			l.advance()
-		case '\t':
+		case l.peek() == '\t':
 			return nil, l.error("tabs are not allowed for indentation")
+		case l.startsWith("//"):
+			l.skipLineComment()
+			l.lineStart = false
+			return nil, diag.Diagnostic{}
+		case l.startsWith("/*"):
+			if err := l.skipBlockComment(); err.Message != "" {
+				return nil, err
+			}
+		case l.peek() == '\n':
+			l.lineStart = false
+			return nil, diag.Diagnostic{}
 		default:
 			goto done
 		}
@@ -324,14 +341,58 @@ func (l *Lexer) lexPunct() (token.Token, bool) {
 	return l.makeToken(kind, string(r), startLine, startCol), true
 }
 
-func (l *Lexer) matchString(s string) bool {
-	if l.pos+len([]rune(s)) > len(l.src) {
+func (l *Lexer) startsWith(s string) bool {
+	rs := []rune(s)
+	if l.pos+len(rs) > len(l.src) {
 		return false
 	}
-	for i, r := range s {
+	for i, r := range rs {
 		if l.src[l.pos+i] != r {
 			return false
 		}
+	}
+	return true
+}
+
+func (l *Lexer) skipLineComment() {
+	for !l.atEOF() && l.peek() != '\n' {
+		l.advance()
+	}
+}
+
+func (l *Lexer) skipBlockComment() diag.Diagnostic {
+	startLine, startCol := l.line, l.column
+	l.advance()
+	l.advance()
+	for !l.atEOF() {
+		if l.startsWith("*/") {
+			l.advance()
+			l.advance()
+			return diag.Diagnostic{}
+		}
+		if l.peek() == '\n' {
+			l.advance()
+			l.line++
+			l.column = 1
+			l.lineStart = true
+			continue
+		}
+		l.advance()
+	}
+	return diag.Diagnostic{
+		Kind:      diag.LexErrorKind,
+		Message:   "unterminated block comment",
+		File:      l.file,
+		Line:      startLine,
+		Column:    startCol,
+		EndLine:   l.line,
+		EndColumn: l.column,
+	}
+}
+
+func (l *Lexer) matchString(s string) bool {
+	if !l.startsWith(s) {
+		return false
 	}
 	for range s {
 		l.advance()

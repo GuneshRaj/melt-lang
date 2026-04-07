@@ -140,7 +140,32 @@ fn main():
 
 ### Comments
 
-Comments are not currently specified or implemented as a stable language feature. Avoid relying on comments in Melt source for now.
+Melt implements C-style comments in source code:
+
+- line comments: `// ...`
+- block comments: `/* ... */`
+
+Supported today:
+
+- full-line comments
+- inline comments after code
+- multi-line block comments
+- comment-only lines inside indented blocks
+
+Current limitation:
+
+- block comments do not nest
+
+Examples:
+
+```melt
+// Load the CSV rows
+rows = csv.load("data/prices_100k.csv", as=Array[PriceRow])
+
+/* Scale the close column
+   with a constant factor. */
+out = scale(close, 1.1)
+```
 
 ### Declarations
 
@@ -507,7 +532,6 @@ The current reliable language slice is:
 
 These are either partial, in progress, or not the main supported path yet:
 
-- comments as a documented feature
 - a broad standard library
 - general-purpose kernel programming beyond the current scale/map path
 - complete native backend coverage for the broader PRD surface

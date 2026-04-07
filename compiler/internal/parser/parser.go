@@ -51,6 +51,7 @@ func (p *Parser) parseStructDecl() ast.TopDecl {
 	name := p.expect(token.IDENT, "expected struct name")
 	p.expect(token.COLON, "expected ':' after struct name")
 	p.expect(token.NEWLINE, "expected newline after struct declaration")
+	p.skipNewlines()
 	p.expect(token.INDENT, "expected indented struct body")
 
 	fields := []ast.FieldDecl{}
@@ -103,6 +104,7 @@ func (p *Parser) parseFunctionDecl(isKernel bool) ast.TopDecl {
 	}
 	p.expect(token.COLON, "expected ':' after function signature")
 	p.expect(token.NEWLINE, "expected newline after function signature")
+	p.skipNewlines()
 	p.expect(token.INDENT, "expected indented function body")
 	body := p.parseBlock()
 	dedent := p.expect(token.DEDENT, "expected end of function body")
@@ -205,6 +207,7 @@ func (p *Parser) parseIfStmt() ast.Stmt {
 	cond := p.parseExpr()
 	p.expect(token.COLON, "expected ':' after if condition")
 	p.expect(token.NEWLINE, "expected newline after if header")
+	p.skipNewlines()
 	p.expect(token.INDENT, "expected indented if body")
 	thenBody := p.parseBlock()
 	endTok := p.expect(token.DEDENT, "expected end of if body")
@@ -212,11 +215,12 @@ func (p *Parser) parseIfStmt() ast.Stmt {
 	var elifs []ast.IfBranch
 	for p.match(token.ELIF) {
 		elifStart := p.previous()
-		elifCond := p.parseExpr()
-		p.expect(token.COLON, "expected ':' after elif condition")
-		p.expect(token.NEWLINE, "expected newline after elif header")
-		p.expect(token.INDENT, "expected indented elif body")
-		body := p.parseBlock()
+			elifCond := p.parseExpr()
+			p.expect(token.COLON, "expected ':' after elif condition")
+			p.expect(token.NEWLINE, "expected newline after elif header")
+			p.skipNewlines()
+			p.expect(token.INDENT, "expected indented elif body")
+			body := p.parseBlock()
 		elifEnd := p.expect(token.DEDENT, "expected end of elif body")
 		elifs = append(elifs, ast.IfBranch{
 			Cond: elifCond,
@@ -230,6 +234,7 @@ func (p *Parser) parseIfStmt() ast.Stmt {
 	if p.match(token.ELSE) {
 		p.expect(token.COLON, "expected ':' after else")
 		p.expect(token.NEWLINE, "expected newline after else")
+		p.skipNewlines()
 		p.expect(token.INDENT, "expected indented else body")
 		elseBody = p.parseBlock()
 		endTok = p.expect(token.DEDENT, "expected end of else body")
@@ -505,8 +510,12 @@ func (p *Parser) expect(kind token.Kind, msg string) token.Token {
 	if p.at(kind) {
 		return p.advance()
 	}
-	p.errorAtCurrent(msg)
-	return p.current()
+	tok := p.current()
+	p.errorAt(tok, msg)
+	if !p.at(token.EOF) {
+		p.advance()
+	}
+	return tok
 }
 
 func (p *Parser) match(kind token.Kind) bool {
